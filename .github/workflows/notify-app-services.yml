@@ -1,0 +1,38 @@
+name: Notify app-services-rs
+
+on:
+  push:
+    tags: ['*']
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tagged commit
+        id: tag
+        run: |
+          sha=$(git rev-parse "${GITHUB_REF}^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$sha" origin/main; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$GITHUB_REF_NAME is not on main, skipping"
+          fi
+
+      - name: Dispatch to app-services-rs
+        if: steps.tag.outputs.on_main == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.APP_SERVICES_DISPATCH_TOKEN }}
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          service=${GITHUB_REPOSITORY#*/app-}
+          service=${service%-rs}
+          gh api repos/festusyuma/app-services-rs/dispatches \
+            -f event_type=service-tagged \
+            -f "client_payload[path]=$service" \
+            -f "client_payload[tag]=$GITHUB_REF_NAME" \
+            -f "client_payload[sha]=$SHA"
